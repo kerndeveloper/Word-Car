@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Car Word Game - Custom 3D</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        
+        #gameCanvas {
+            border: 2px solid #333;
+            background: #87CEEB;
+            touch-action: none;
+            max-width: 100%;
+            max-height: 100vh;
+        }
+        
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 16px;
+            z-index: 10;
+        }
+        
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+            z-index: 10;
+        }
+        
+        .btn {
+            width: 60px;
+            height: 60px;
+            background: rgba(255, 255, 255, 0.3);
+            border: 2px solid white;
+            border-radius: 50%;
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            touch-action: manipulation;
+            user-select: none;
+        }
+        
+        .btn:active {
+            background: rgba(255, 255, 255, 0.5);
+        }
+        
+        .btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .btn-row {
+            display: flex;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <strong>3D Car Game - Phase 1</strong><br>
+        Custom 3D Engine (No CDN!)<br>
+        <span id="status">✅ Ready!</span>
+    </div>
+    
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    
+    <!-- Mobile controls -->
+    <div class="controls">
+        <div class="btn-group">
+            <div class="btn-row">
+                <div class="btn" id="btnUp">↑</div>
+            </div>
+            <div class="btn-row">
+                <div class="btn" id="btnLeft">←</div>
+                <div class="btn" id="btnDown">↓</div>
+                <div class="btn" id="btnRight">→</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Responsive canvas
+        function resizeCanvas() {
+            const maxWidth = window.innerWidth - 20;
+            const maxHeight = window.innerHeight - 20;
+            const aspectRatio = 800 / 600;
+            
+            let width = maxWidth;
+            let height = width / aspectRatio;
+            
+            if (height > maxHeight) {
+                height = maxHeight;
+                width = height * aspectRatio;
+            }
+            
+            canvas.style.width = width + 'px';
+            canvas.style.height = height + 'px';
+        }
+        
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        
+        // Simple 3D Math
+        class Vector3 {
+            constructor(x, y, z) {
+                this.x = x;
+                this.y = y;
+                this.z = z;
+            }
+            
+            subtract(v) {
+                return new Vector3(this.x - v.x, this.y - v.y, this.z - v.z);
+            }
+            
+            add(v) {
+                return new Vector3(this.x + v.x, this.y + v.y, this.z + v.z);
+            }
+        }
+        
+        // Camera
+        const camera = {
+            pos: new Vector3(0, 5, 15),
+            fov: 400
+        };
+        
+        // Project 3D point to 2D screen
+        function project(point) {
+            const relative = point.subtract(camera.pos);
+            
+            if (relative.z <= 0) return null; // Behind camera
+            
+            const scale = camera.fov / relative.z;
+            return {
+                x: 400 + relative.x * scale,
+                y: 300 - relative.y * scale,
+                z: relative.z
+            };
+        }
+        
+        // Draw a 3D cube
+        function drawCube(pos, size, color) {
+            const s = size / 2;
+            
+            // Define 8 vertices of cube
+            const vertices = [
+                new Vector3(pos.x - s, pos.y - s, pos.z - s),
+                new Vector3(pos.x + s, pos.y - s, pos.z - s),
+                new Vector3(pos.x + s, pos.y + s, pos.z - s),
+                new Vector3(pos.x - s, pos.y + s, pos.z - s),
+                new Vector3(pos.x - s, pos.y - s, pos.z + s),
+                new Vector3(pos.x + s, pos.y - s, pos.z + s),
+                new Vector3(pos.x + s, pos.y + s, pos.z + s),
+                new Vector3(pos.x - s, pos.y + s, pos.z + s)
+            ];
+            
+            // Project vertices
+            const projected = vertices.map(v => project(v)).filter(p => p !== null);
+            
+            if (projected.length < 8) return;
+            
+            // Define faces (which vertices connect)
+            const faces = [
+                [0, 1, 2, 3], // Front
+                [4, 5, 6, 7], // Back
+                [0, 1, 5, 4], // Bottom
+                [2, 3, 7, 6], // Top
+                [0, 3, 7, 4], // Left
+                [1, 2, 6, 5]  // Right
+            ];
+            
+            // Calculate average Z for sorting (painter's algorithm)
+            const facesWithZ = faces.map(face => {
+                const avgZ = face.reduce((sum, i) => sum + projected[i].z, 0) / face.length;
+                return { face, avgZ };
+            });
+            
+            // Sort by Z (furthest first)
+            facesWithZ.sort((a, b) => b.avgZ - a.avgZ);
+            
+            // Draw faces
+            facesWithZ.forEach(({ face }, index) => {
+                ctx.beginPath();
+                ctx.moveTo(projected[face[0]].x, projected[face[0]].y);
+                
+                for (let i = 1; i < face.length; i++) {
+                    ctx.lineTo(projected[face[i]].x, projected[face[i]].y);
+                }
+                
+                ctx.closePath();
+                
+                // Darken back faces
+                const brightness = 1 - (index / facesWithZ.length) * 0.5;
+                ctx.fillStyle = shadeColor(color, brightness);
+                ctx.fill();
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            });
+        }
+        
+        // Helper to shade colors
+        function shadeColor(color, percent) {
+            const num = parseInt(color.replace('#', ''), 16);
+            const r = Math.floor((num >> 16) * percent);
+            const g = Math.floor(((num >> 8) & 0x00FF) * percent);
+            const b = Math.floor((num & 0x0000FF) * percent);
+            return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
+        }
+        
+        // Draw ground grid
+        function drawGround() {
+            ctx.strokeStyle = '#228B22';
+            ctx.lineWidth = 1;
+            
+            for (let x = -20; x <= 20; x += 2) {
+                const start = project(new Vector3(x, 0, -30));
+                const end = project(new Vector3(x, 0, 30));
+                
+                if (start && end) {
+                    ctx.beginPath();
+                    ctx.moveTo(start.x, start.y);
+                    ctx.lineTo(end.x, end.y);
+                    ctx.stroke();
+                }
+            }
+            
+            for (let z = -30; z <= 30; z += 2) {
+                const start = project(new Vector3(-20, 0, z));
+                const end = project(new Vector3(20, 0, z));
+                
+                if (start && end) {
+                    ctx.beginPath();
+                    ctx.moveTo(start.x, start.y);
+                    ctx.lineTo(end.x, end.y);
+                    ctx.stroke();
+                }
+            }
+        }
+        
+        // Game state
+        const car = {
+            pos: new Vector3(0, 1, 0),
+            speed: 0.2
+        };
+        
+        // Input
+        const keys = {};
+        
+        window.addEventListener('keydown', (e) => { keys[e.key] = true; });
+        window.addEventListener('keyup', (e) => { keys[e.key] = false; });
+        
+        function setupButton(id, key) {
+            const btn = document.getElementById(id);
+            btn.addEventListener('touchstart', (e) => { e.preventDefault(); keys[key] = true; });
+            btn.addEventListener('touchend', (e) => { e.preventDefault(); keys[key] = false; });
+            btn.addEventListener('mousedown', () => { keys[key] = true; });
+            btn.addEventListener('mouseup', () => { keys[key] = false; });
+        }
+        
+        setupButton('btnUp', 'ArrowUp');
+        setupButton('btnDown', 'ArrowDown');
+        setupButton('btnLeft', 'ArrowLeft');
+        setupButton('btnRight', 'ArrowRight');
+        
+        // Update
+        function update() {
+            if (keys['ArrowUp'] || keys['w']) car.pos.z -= car.speed;
+            if (keys['ArrowDown'] || keys['s']) car.pos.z += car.speed;
+            if (keys['ArrowLeft'] || keys['a']) car.pos.x -= car.speed;
+            if (keys['ArrowRight'] || keys['d']) car.pos.x += car.speed;
+            
+            // Keep car in bounds
+            car.pos.x = Math.max(-10, Math.min(10, car.pos.x));
+            car.pos.z = Math.max(-20, Math.min(20, car.pos.z));
+            
+            // Camera follows car
+            camera.pos.x = car.pos.x;
+            camera.pos.z = car.pos.z + 15;
+        }
+        
+        // Draw
+        function draw() {
+            // Clear
+            ctx.fillStyle = '#87CEEB';
+            ctx.fillRect(0, 0, 800, 600);
+            
+            // Draw ground
+            drawGround();
+            
+            // Draw car
+            drawCube(car.pos, 2, '#ff0000');
+            
+            // Draw some letters for testing
+            drawCube(new Vector3(-5, 1, -10), 1.5, '#ffff00');
+            drawCube(new Vector3(0, 1, -15), 1.5, '#ffff00');
+            drawCube(new Vector3(5, 1, -20), 1.5, '#ffff00');
+        }
+        
+        // Game loop
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+        
+        gameLoop();
+    </script>
+</body>
+</html>
